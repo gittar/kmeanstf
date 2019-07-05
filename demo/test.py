@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 from kmeanstf import KMeansTF
 
 # create data set
-X = tf.random.normal([100000,2])
+X = tf.random.normal([50000,2])
 # create kmeanstf object
-km = KMeansTF(n_clusters=50)
+km = KMeansTF(n_clusters=100)
 # adapt
 km.fit(X)
 

@@ -4,10 +4,10 @@ import sys
 import time
 import matplotlib.pyplot as plt
 from kmeanstf import Initializer
-def main1():
+def main():
     """ minimal test: create data, initialize codebook, plot
     """
-    print("main1 example")
+    print("main example")
     n = 2000000
     n = 2000000
     d = 2
@@ -25,7 +25,6 @@ def main1():
         start = time.time()
         codebooks[i],sse[i]=Initializer.init(data,k,method)
         times[i]=time.time()-start
-        print("jiji",sse[i])
 
     fig,axes = plt.subplots(nrows=1, ncols=len(methods), sharex=True,sharey=True, figsize=( 12,5))
     if len(methods) == 1:
@@ -38,8 +37,4 @@ def main1():
 
     plt.show()
 
-
-if len(sys.argv)>1:
-    print (sys.argv[1])
-print (sys.argv)
-main1()
+main()

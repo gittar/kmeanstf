@@ -13,9 +13,9 @@ import matplotlib.pyplot as plt
 from kmeanstf import KMeansTF
 
 # create data set
-X = tf.random.normal([100000,2])
+X = tf.random.normal([50000,2])
 # create kmeanstf object
-km = KMeansTF(n_clusters=50)
+km = KMeansTF(n_clusters=100)
 # adapt
 km.fit(X)
 
@@ -63,7 +63,7 @@ On a linux machine (Ubuntu 18.04 LTS) equipped with a NVidia GTX-1060 6MB graphi
 
 [barspeed]: img/barspeed3.png "speed-up chart"
 
-Below you see speed-up values measured for different values of data set size *n* and number of centroids *k* for 2D-data. for larger data sets also the speed-up tends to be higher. For small data sets, however, KMeansTF is actually often slower than scikit-learn KMeans. Perhaps this is caused caused by a start-up time for tensorflow. One could argue that this is not so relevant but it may also indicate potential for improvement for the kmeanstf implementation.
+Below you see speed-up values measured for different values of data set size *n* and number of centroids *k* for 2D-data. For larger data sets also the speed-up tends to be higher. For small data sets, however, KMeansTF is actually often slower than scikit-learn KMeans. Perhaps this is caused caused by a start-up time for tensorflow. One could argue that this is not so relevant but it may also indicate potential for improvement for the kmeanstf implementation.
 ![alt text][speed-up]
 
 
