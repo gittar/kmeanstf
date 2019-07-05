@@ -36,7 +36,7 @@ plt.show()
 # What is k-means?
 [k-means](https://en.wikipedia.org/wiki/K-means_clustering) - a.k.a. Lloyds Algorithm - is  a well-known clustering method that positions k centroids (means) over a given data set.
 
-Starting from some initial positions of the centroids a number of Lloyd iterations is performed until a stopping criterion is met. One Lloyd iteration consists of the following two steps:
+Starting from some initial positions of the centroids a number of so-called "Lloyd iterations" is performed until a stopping criterion is met. One Lloyd iteration consists of the following two steps:
 * determine for each centroid the subset of data points for which this centroid is closest
 * move each centroid to the mean of its associated data sub-set (hence the name "k-means")
 
@@ -46,7 +46,7 @@ The final sum of distances depends strongly on the initial centroid positions. A
 
 
 # k-means++
-In 2006 a particular initalization method was proposed which produces provably good (but generally still sub-optimal) results: [k-means++](http://ilpubs.stanford.edu:8090/778/1/2006-13.pdf). One can describe the core of k-means++ as the sequential positioning of centroids in areas where the given data points are far from the already positioned centroids. k-means++ is said to both generate better solutions than k-means with random initialization
+In 2006 a particular initalization method was proposed which produces provably good (but generally still sub-optimal) results: [k-means++](http://ilpubs.stanford.edu:8090/778/1/2006-13.pdf). One can describe the core of k-means++ as the sequential positioning of centroids in areas where the given data points are far from the already positioned centroids. k-means++ is said to both generate better solutions than k-means with random initialization as well as needing fewer Lloyd iterations.
 
 Probably due to its good results k-means++ has been chosen as the default intialization method for the implementation of k-means in the popular [scikit-learn  python library](https://scikit-learn.org)  for machine learning
 
