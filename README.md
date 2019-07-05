@@ -1,12 +1,13 @@
 # kmeanstf
-## a tensorflow-gpu based implementation of k-means++
+## k-means++ implementation based on tensorflow-gpu
 
 # TL;DR
 
 To use k-means++ with GPU-support do the following:
 
-install kmeanstf (pip install kmeanstf)
+```pip install kmeanstf```
 
+Execute the following test program (https://github.com/gittar/kmeanstf/blob/master/demo/test.py)
 ```python
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -26,11 +27,11 @@ ax.scatter(X[:m,0],X[:m,1],s=1)
 ax.scatter(km.cluster_centers_[:,0],km.cluster_centers_[:,1],s=8,c="r")
 plt.show()
 ```
-(requires tensorflow-gpu and download of the kmeanstf package)
+(requires tensorflow-gpu, either 1.14 or 2.0b)
 
 ![alt text][logo]
 
-[logo]: img/million_100.png "Logo Title Text 2"
+[logo]: https://raw.githubusercontent.com/gittar/kmeanstf/master/img/million_100.png "k-means++ example"
 
 # What is k-means?
 [k-means](https://en.wikipedia.org/wiki/K-means_clustering) - a.k.a. Lloyds Algorithm - is  a well-known clustering method that positions k centroids (means) over a given data set.
@@ -61,13 +62,13 @@ On a linux machine (Ubuntu 18.04 LTS) equipped with a NVidia GTX-1060 6MB graphi
 
 ![alt text][barspeed]
 
-[barspeed]: img/barspeed3.png "speed-up chart"
+[barspeed]: https://raw.githubusercontent.com/gittar/kmeanstf/master/img/barspeed3.png "speed-up chart"
 
 Below you see speed-up values measured for different values of data set size *n* and number of centroids *k* for 2D-data. For larger data sets also the speed-up tends to be higher. For small data sets, however, KMeansTF is actually often slower than scikit-learn KMeans. Perhaps this is caused caused by a start-up time for tensorflow. One could argue that this is not so relevant but it may also indicate potential for improvement for the kmeanstf implementation.
 ![alt text][speed-up]
 
 
-[speed-up]: img/speedupa2.png "speed-up chart"
+[speed-up]: https://raw.githubusercontent.com/gittar/kmeanstf/master/img/speedupa2.png "speed-up chart"
 
 # Why is it so fast?
 
