@@ -5,7 +5,7 @@ from kmeanstf import KMeansTF
 # create data set
 X = tf.random.normal([50000,2])
 # create kmeanstf object
-km = KMeansTF(n_clusters=100)
+km = KMeansTF(n_clusters=100, n_init=1)
 # adapt
 km.fit(X)
 
