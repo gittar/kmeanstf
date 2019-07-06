@@ -48,6 +48,11 @@ class KMeansTF:
         # in some places different code is needed
         self.TF2 = tf.__version__[0]=="2"
 
+    def _tolerance(self, X, tol):
+        """Return a tolerance which is independent of the dataset"""
+        _, variances = tf.nn.moments(X,axes=[0])
+        return tf.math.reduce_mean(variances) * tol
+
     def fit(self, X):
         """actually compute the clustering for data set X
         """
@@ -68,6 +73,9 @@ class KMeansTF:
         """
         self.fit(X)
         return self.predict(X)   
+    def squared_norm(self,X):
+        return tf.reduce_sum(tf.square(tf.norm(X)))
+
     def _k_means(self,X, n_clusters, init='k-means++',
             n_init=10, max_iter=300,
             tol=1e-4):
@@ -92,20 +100,25 @@ class KMeansTF:
             end = time()
             init_duration = end-start
 
+            # compute X-dependent tolerance value
+            tol = self._tolerance(X, tol)
             #
             # Lloyd Iterations
             #
             sse = -1
             for i in range(max_iter):
-                prev_sse = sse
+                # create copy to measure tol
+                centroids_old = current_centroids+0
+                #print(centroids_old.shape)
                 sse, nearest_indices = self._get_sse_and_nearest(X,current_centroids)
                 current_centroids = self._update_centroids(X, nearest_indices, n_clusters)
 
-                if prev_sse >= 0:
-                    # compute relative improvement
-                    imp = (prev_sse-sse)/prev_sse
-                    if ( imp < tol):
-                        # improvement too small, finish
+                if tol>0:
+                    # stop if center shift is bewlow tolerance
+                    center_shift_total = self.squared_norm(centroids_old - current_centroids)
+                    if center_shift_total < tol:
+                        if self.verbose > 0:
+                            print ("tolerance reached:", center_shift_total.numpy(), " < ", tol.numpy())
                         break
 
             # get most current sse (has possibly changed through last centroid update)
@@ -115,6 +128,7 @@ class KMeansTF:
                 sse_min = sse
                 best_centroids = current_centroids
                 best_n_iter = i+1
+
 
             if not isinstance(self.init, str):
                 # ndarray as init, no other trials needed

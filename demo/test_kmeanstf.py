@@ -1,3 +1,8 @@
+"""testing kmeanstf"""
+
+# Authors: Bernd Fritzke
+# License: BSD 3 clause
+
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import sys
@@ -13,18 +18,26 @@ tol=0
 max_iter=30
 init = 'k-means++'
 
+if tf.test.is_gpu_available():
+    print("GPU is present")
+else:
+    print("no GPU is present!")
+
+if tf.test.is_built_with_cuda():
+    print("tf is built with cuda")
+else:
+    print("tf is not built with cuda")
+
 # create data set
 #X = tf.random.normal([1000000,2])
 #X = tf.random.normal([3000000,2])
-X = tf.random.normal([10000,2])
+#X = tf.random.normal([500000,2])
+X = tf.random.normal([100000,2])
 
 print("**** Tensorflow-based k-means++ ****")
 s = KMeansTF(n_clusters=n_clusters, n_init=n_init, init=init, tol=tol, max_iter=max_iter,max_mem=1300000000)
 start = time()
-pred = s.fit_predict(X)
-print(pred[:10])
-print("1st vector", X[0])
-print("predicted centroid:",s.cluster_centers_[pred[0]])
+s.fit(X)
 d1=time()-start
 print("duration: {:5.2f}s n_iter: {:} ".format(d1, s.n_iter_))
 sse1 = s.inertia_
@@ -69,7 +82,6 @@ if comp:
     ax.scatter(c[:,0],c[:,1],s=4**2,c="r")
     ax.set_title("scikit-learn:  iter={:2d}  t={:5.2f}s  SSE={:6.1f}".format( km.n_iter_, d2,sse2))
 
-#print("tippi:",type(X.shape[0]),"<===>",type(c.shape[0]))
 if isinstance(X.shape[0], int):
     npoints = X.shape[0]
 else:
