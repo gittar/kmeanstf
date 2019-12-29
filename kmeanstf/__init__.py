@@ -1,2 +1,2 @@
 from .kmeanstf import KMeansTF
-from .initializer import Initializer
+from .kmeanstf import TunnelKMeansTF
