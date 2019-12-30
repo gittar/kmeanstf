@@ -21,6 +21,7 @@ project = 'kmeanstf'
 copyright = '2020, Bernd Fritzke'
 author = 'Bernd Fritzke'
 
+master_doc = 'index'
 
 # -- General configuration ---------------------------------------------------
 
