@@ -100,8 +100,12 @@ class BaseKMeansTF:
         self.tol = tol
         self.verbose = verbose
         self.random_state = random_state
+        TF2 = tf.__version__[0] == "2"
         if not self.random_state is None:
-            tf.random.set_seed(self.random_state)
+            if TF2:
+                tf.random.set_seed(self.random_state)
+            else:
+                tf.compat.v1.set_random_seed(self.random_state)
             random.seed(self.random_state)
             np.random.seed(self.random_state)
         self.n_init_ = n_init
@@ -1240,7 +1244,11 @@ class BaseKMeansTF:
         """setting random seed for tensorflow, python and numpy
         
         :param seed (int): random seed""" 
-        tf.random.set_seed(seed)
+        TF2 = tf.__version__[0] == "2"
+        if TF2:
+            tf.random.set_seed(seed)
+        else:
+            tf.compat.v1.set_random_seed(seed)
         random.seed(seed)
         np.random.seed(seed)
 
