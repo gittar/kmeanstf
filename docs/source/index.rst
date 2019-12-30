@@ -7,12 +7,13 @@ kmeanstf
 * *k*-means++ `(Arthur and Vassilvitskii, 2006) <http://ilpubs.stanford.edu:8090/778/1/2006-13.pdf>`_
 * tunnel *k*-means (Fritzke, coming soon)
 
-`k-means <https://en.wikipedia.org/wiki/K-means_clustering>`_ and `k-means++ <https://en.wikipedia.org/wiki/K-means%2B%2B>`_ should 
-be known to most people interested in this package (if you never heard of either you might be wrong here :-)). 
+The `k-means <https://en.wikipedia.org/wiki/K-means_clustering#Standard_algorithm_(naive_k-means)>`_ algorithm (a.k.a. "Lloyd's algorithm") and its 
+variant `k-means++ <https://en.wikipedia.org/wiki/K-means%2B%2B>`_ are probably the most well-known 
+approximation algorithms for the `k-means problem <https://en.wikipedia.org/wiki/K-means_clustering#Description>`_ .
 
-Tunnel *k*-means is a rather new algorithm which differs from the other by its ability to perform non-local "tunnel" movements. 
-This makes it possible to escape from poor local minima and leads to solutions with a very low SSE (summed square error). Below is an illustration of the principle. 
-A detailed motivation and description can be found in (coming soon)
+Tunnel *k*-means is a rather new algorithm which differs from the other two by its ability to perform non-local "tunnel" movements 
+making  it possible to escape from poor local minima and to find solutions with very low SSE (summed square error). Below is an illustration of the principle. 
+A detailed motivation and description can be found in (coming soon).
 
 .. image:: ./img/tkmeans1.png
     :width: 700px
