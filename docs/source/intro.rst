@@ -10,6 +10,10 @@ kmeanstf is available from pypi and can thus be installed using `pip <https://py
 
     $ pip install kmeanstf
 
+TensorFlow is required (1.15.0 or 2.0.0+) and will be installed automatically if not present. 
+If you have a supported GPU  it is advisable to install ``tensorflow-gpu`` to 
+get a speed-up of 4-8 for larger problems (see https://www.tensorflow.org/install/gpu).
+
 Self Test
 ---------
 
