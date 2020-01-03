@@ -1,5 +1,5 @@
 kmeanstf.kmeanstf.KMeansTF
-==========================
+--------------------------
 
 .. currentmodule:: kmeanstf.kmeanstf
 

@@ -26,5 +26,6 @@ A detailed motivation and description can be found in (coming soon).
    :glob:
 
    intro
-   stubs/*
+   api
+   misc
  

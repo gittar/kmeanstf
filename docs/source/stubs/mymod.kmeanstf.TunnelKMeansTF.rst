@@ -1,5 +1,5 @@
 kmeanstf.kmeanstf.TunnelKMeansTF
-================================
+--------------------------------
 
 .. currentmodule:: kmeanstf.kmeanstf
 
