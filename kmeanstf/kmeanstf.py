@@ -11,6 +11,7 @@
 # Author: Bernd Fritzke <fritzke@web.de>
 # License: BSD 3 Clause
 import tensorflow as tf
+import nvidia_smi
 import numpy as np
 import math
 import random
@@ -40,7 +41,39 @@ class _MyProblem(Exception):
 
 class BaseKMeansTF:
     """
-    Base Class for KMeansTF ans TunnelKMeansTF
+Base class for :class:`.KMeansTF` and :class:`.TunnelKMeansTF`
+
+.. note::
+
+    To use it directly, set the parameter ``tunnel`` to False (k-means) or True (tunnel k-means).
+    Recommended Usage is via the derived classes :class:`.KMeansTF` and :class:`.TunnelKMeansTF`
+
+Args:
+    n_clusters (int): The number of clusters to form as well as the number of centroids to generate.
+    init ('random', 'k-means++' or array): method of initialization
+    n_init (int): number of runs of the initial k-means phase with different initializations (default 1). 
+                    Only one tunnel phase is performed even if n_init is larger than 1.
+    max_iter (int):   Maximum number of Lloyd iterations for a single run of the k-means algorithm.
+    tol (float): Relative tolerance with regards to inertia to declare convergence.
+    verbose (int):    Verbosity mode.
+    random_state (int): None, or integer to seed the random number generators of python, numpy and tensorflow
+    algorithm (str): "full", no other values implemented, added for compatibility with sklearn. Attention: sklearn.KMeans has
+            'elkan' as default which as of Dec 2019 interprets 'tol'-Parameter differently than 'full', see
+            https://github.com/scikit-learn/scikit-learn/issues/15831
+    max_mem (int):    max memory for GPU data (default value fits for GTX 1060)
+    tunnel (boolean): perform tunnel k-means?
+    max_tunnel_iter (int): how many tunnel iterations to perform maximally
+    max_tunnel_moves_per_iter (int): how many centroids to move maximally in one tunnel iteration
+    criterion (float): inital required ratio error/utility (is increased adaptively)
+    local_trials (int): how many time should each tunnel move be repeated with different random offset vector (1 or larger)
+    collect_history (bool): collect historic information on inertia, criterion, tunnel moves, codebooks
+
+Attributes:
+    cluster_centers_ (array, [n_clusters, n_features]): Coordinates of cluster centers. If the algorithm stops before fully 
+        converging (see tol and max_iter), these will not be consistent with labels\\_.
+    labels_ (array, shape(n_samples)): Labels of each point, i.e. index of closest centroid
+    inertia_ (float): Sum of squared distances of samples to their closest cluster center.
+    n_iter (int): Number of iterations run.
 
 
     .. autosummary::
@@ -91,11 +124,13 @@ class BaseKMeansTF:
         # from scikit learn
         self.n_clusters = n_clusters
         # convert numpy codebook to tf
-        if type(init) == np.ndarray:
-            self.init = tf.constant(init.astype(self._get_num_type()))
-        else:
+        if isinstance(init,str):
             self.init = init
-        # assertion: self.init is no np array
+            self.cluster_centers_= None
+        else:
+            self.init = self._ensure_tensor(init)
+            self.cluster_centers_ = self.init+0
+
         self.max_iter = max_iter
         self.tol = tol
         self.verbose = verbose
@@ -117,19 +152,11 @@ class BaseKMeansTF:
         self.local_trials_ = local_trials
         self.collect_history = collect_history
         self.criterion_factor_ = 1.1
-        if isinstance(init, tf.Tensor):
-            assert KMeansTF._shape(init)[0]==n_clusters, "jiji"#f"inital codebook has different size ({KMeansTF._shape(init)[0]}) than n_clusters ({n_clusters})"
-            self.cluster_centers_ = init
-        # elif isinstance(init, np.ndarray):
-        #    self.cluster_centers_ = tf.constant(init)
-        else:
-            self.cluster_centers_ = None
-        # size of neighborhood to be frozen after a move
         # relative to mean distance beween neighboring centroids
         self.source_freeze_factor = 1.1  # 3.0 # freeze in the vicinity of source
         self.target_freeze_factor = 3.0  # freeze in the vicinity of target
         #
-        # self.maxmen is an empirically found number to indicate when the 3D-matrix used for distance computation
+        # self.max_men is an empirically found number to indicate when the 3D-matrix used for distance computation
         # should be partitioned to avoid memory overflow of the GPU
         # the default value is empirically found for NVidia GTX-1060 6MB
         # may need to be adapted for other GPUs
@@ -178,8 +205,8 @@ class BaseKMeansTF:
             'local_trials': local_trials
         }
         if isinstance(init, tf.Tensor):
-            gogo = str(KMeansTF._shape(init))
-            self._params['init'] = 'array of shape'+gogo
+            shape_str = str(KMeansTF._shape(init))
+            self._params['init'] = 'array of shape '+shape_str
  
         #
         # results of simulation run
@@ -414,6 +441,21 @@ class BaseKMeansTF:
             self.fit(X)
             print(i, self.inertia_)
 
+    def _ensure_tensor(self, X):
+        # convert X to Tensor if needed
+        # convert to correct num_type if needed
+        if isinstance(X, tf.Tensor):
+            if not X.dtype == self._get_num_type_tf():
+                # cast to required type
+                X = tf.cast(X,self._get_num_type_tf())
+        elif isinstance(X, np.ndarray):
+            # create tf.Tensor from to ndarray
+            X = tf.constant(X.astype(self._get_num_type()))
+        else:
+            raise Exception(
+                "Type for parameter X must be ndarray or tf.Tensor but is "+str(type(X)))
+        return X
+       
     def fit(self, X):
         """Compute k-means clustering.
 
@@ -426,16 +468,7 @@ class BaseKMeansTF:
             * self.inertia\\_
         """
 
-        if isinstance(X, tf.Tensor):
-            if not X.dtype == self._get_num_type_tf():
-                # cast to required type
-                X = tf.cast(X,self._get_num_type_tf())
-        elif isinstance(X, np.ndarray):
-            # create tf.Tensor from to ndarray
-            X = tf.constant(X.astype(self._get_num_type()))
-        else:
-            raise Exception(
-                "Type for fit() parameter must be ndarray or tf.Tensor but is "+str(type(X)))
+        X = self._ensure_tensor(X)
         t_start = time()
 
         #
@@ -478,6 +511,7 @@ class BaseKMeansTF:
         Returns:
             array of cluster indices
         """
+        X = self._ensure_tensor(X)
         return self._get_nearest_centroids(X, self.cluster_centers_)
 
     def fit_predict(self, X):
@@ -492,6 +526,7 @@ class BaseKMeansTF:
             array of cluster indices
 
         """
+        X = self._ensure_tensor(X)
         self.fit(X)
         return self.predict(X)
 
@@ -515,9 +550,9 @@ class BaseKMeansTF:
         - "k-means++"
         - actual codebook (detected as not being a string)
 
-        TODO: distinguish behavior if called from fit() or if called from tunnelling
+        can be called from fit() or if called from tunnelling
         * call from fit(): several possibilities for init(random, k-means++,codebook)
-        * call from tunnelling: allways init=codebook
+        * call from tunnelling: always init=codebook
 
         """
         # initialize
@@ -552,7 +587,7 @@ class BaseKMeansTF:
                 print()
             start = time()
             if isinstance(self.init, str):
-                # init indicates a method
+                # init indicates a method, only happens when called from fit()
                 if self.init == "random":
                     # random init
                     current_centroids, _ = _Initializer.init(
@@ -842,7 +877,6 @@ class BaseKMeansTF:
                 # fit in GPU memory (adapted to GTX 1060 6MB only, sorry :-))
                 # for other cards it my be useful to set self.max_mem differently
                 #
-                # TODO: message stating matrix_size and max_mem
                 self.fract_ = True
                 # number of fractions needed such that each is not larger than self.max_mem
                 n_frac = math.ceil(1.0*matrix_size/self.max_mem)
@@ -1119,9 +1153,9 @@ class BaseKMeansTF:
                     sse = tf.reduce_sum(tf.reduce_min(distances, 0)).numpy()
                     # nearest centroid for all data points
                     nearest_centroids = tf.argmin(distances, 0)  # [n]
-                    # nearest samples for all centroids (needed in case of dead units) TODO: whate about highd
+                    # nearest samples for all centroids (needed in case of dead units)
                     if direct_call_from_fit:
-                        # we need this to handle possible dead units, which do no not occur later (?)
+                        # we need this to handle possible dead units, which do no not occur later (TODO ?)
                         self.nearest_samples = tf.argmin(distances, 1)  # [n]
                     distances = None
                     ready = True
@@ -1293,9 +1327,34 @@ class BaseKMeansTF:
                 print(e)
         else:
             if do_print:
-                print("no GPUs available")
+                print("no Tensorflow-visible GPUs available")
             ret["Physical GPUs"] = 0
             ret["Logical GPUs"] = 0
+
+        try:
+            nvidia_smi.nvmlInit()
+        except:
+            ret["NVidia GPU"] = False
+            ret["Total GPU Memory"] = 0
+            ret["Free GPU Memory"] = 0
+            ret["Used GPU Memory"] = 0
+        else:
+            ret["NVidia GPU"] = True
+
+            handle = nvidia_smi.nvmlDeviceGetHandleByIndex(0)
+            # card id 0 hardcoded here, there is also a call to get all available card ids, so we could iterate
+
+            info = nvidia_smi.nvmlDeviceGetMemoryInfo(handle)
+
+            if do_print:
+                print(f"Total GPU Memory: {info.total:,d}")
+                print(f"Free GPU Memory: {info.free:,d}")
+                print(f"Used GPU Memory: {info.used:,d}")
+            ret["Total GPU Memory"] = info.total
+            ret["Free GPU Memory"] = info.free
+            ret["Used GPU Memory"] = info.used
+
+            nvidia_smi.nvmlShutdown()        
         return ret
     
     @staticmethod
@@ -1306,8 +1365,9 @@ class BaseKMeansTF:
             # shape is int vector in tf 2.0
             return(t.shape)
         else:
-            # shape is Dimension object in tf 1.x
-            return list(map(lambda x: x, t.shape))
+            # shape is TensorShape object in tf 1.x
+            # with Dimension as fields
+            return t.shape.as_list()
 
     @staticmethod
     def _ugauss(n, d, sig):
@@ -1531,7 +1591,9 @@ class BaseKMeansTF:
             }
 
 class KMeansTF(BaseKMeansTF):
-    """ k-means/k-means++
+    """ implements k-means/k-means++
+
+For full desription of methods see base class :class:`BaseKMeansTF`
 
 Args:
     n_clusters (int): The number of clusters to form as well as the number of centroids to generate.
@@ -1567,9 +1629,10 @@ Attributes:
             max_mem=max_mem)
 
 
-# TODO: labels
 class TunnelKMeansTF(BaseKMeansTF):
-    """ tunnel k-means
+    """ implements tunnel k-means
+
+For full desription of methods see base class :class:`BaseKMeansTF`
 
 Args:
     n_clusters (int): The number of clusters to form as well as the number of centroids to generate.
