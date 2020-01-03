@@ -1,4 +1,7 @@
+numpy
 tensorflow
 scikit-learn
 matplotlib
+nvidia-ml-py3
+
 
