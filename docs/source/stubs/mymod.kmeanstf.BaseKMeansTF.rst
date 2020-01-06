@@ -21,6 +21,7 @@ kmeanstf.kmeanstf.BaseKMeansTF
       ~BaseKMeansTF.fit
       ~BaseKMeansTF.fit_predict
       ~BaseKMeansTF.get_errs_and_utils
+      ~BaseKMeansTF.get_gaussian_mixture
       ~BaseKMeansTF.get_history
       ~BaseKMeansTF.get_log
       ~BaseKMeansTF.get_params

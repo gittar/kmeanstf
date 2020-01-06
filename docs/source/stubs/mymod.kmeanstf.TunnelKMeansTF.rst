@@ -20,6 +20,7 @@ kmeanstf.kmeanstf.TunnelKMeansTF
       ~TunnelKMeansTF.fit
       ~TunnelKMeansTF.fit_predict
       ~TunnelKMeansTF.get_errs_and_utils
+      ~TunnelKMeansTF.get_gaussian_mixture
       ~TunnelKMeansTF.get_history
       ~TunnelKMeansTF.get_log
       ~TunnelKMeansTF.get_params
