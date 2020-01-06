@@ -1,6 +1,6 @@
 # kmeanstf
 
-tensorflow-based implementations of the following algorithms:
+TensorFlow-based implementations of the following algorithms:
 
 * k-means with random initialization (Lloyd, 1982)
 * k-means++ (Arthur and Vassilvitskii, 2006)
