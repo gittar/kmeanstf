@@ -77,7 +77,7 @@ Using TunnelKMeansTF
 --------------------
 
 The class :class:`.TunnelKMeansTF` implements the tunnel *k*-means algorithm as described 
-in `arXiv:1706.09059 <https://arxiv.org/abs/1706.09059>`_. Its API is very close to scikit-learn's `KMeans <https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html>`_ class 
+in `arXiv:TODO <>`_. Its API is very close to scikit-learn's `KMeans <https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html>`_ class 
 but has some additional optional parameters related to tunnel *k*-means.
  
 Executing the  code
