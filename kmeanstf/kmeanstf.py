@@ -18,8 +18,6 @@ import random
 import os
 import sys
 
-assert sys.version_info[0] == 3, "Python 3 is required for kmeanstf"
-
 from time import time
 from sklearn.cluster import KMeans
 from ._initializer import _Initializer
@@ -30,12 +28,28 @@ import matplotlib.pyplot as plt
 from tensorflow.python.util import deprecation
 deprecation._PRINT_DEPRECATION_WARNINGS = False
 
-
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
-#os.environ["CUDA_VISIBLE_DEVICES"]="10" # NOSONAR
+# TF_CPP loglevel: 
+# 0: all messages
+# 1: INFO filtered out
+# 2: WARNING filtered out
+# 3: ERROR filtered out
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+#os.environ["CUDA_VISIBLE_DEVICES"]="" # NOSONAR
 
 
 class _MyProblem(Exception):
+    pass
+
+class InsufficientGpuMemoryError(Exception):
+    # raised when GPU is available but has to little free memory
+    pass
+
+class TensorError(Exception):
+    # raised when expected tensor-variable is no tensor
+    pass
+
+class InvalidInitTypeError(Exception):
+    # raised when init parameter is of unexpected type
     pass
 
 
@@ -45,8 +59,8 @@ Base class for :class:`.KMeansTF` and :class:`.TunnelKMeansTF`
 
 .. note::
 
-    To use it directly, set the parameter ``tunnel`` to False (k-means) or True (tunnel k-means).
-    Recommended Usage is via the derived classes :class:`.KMeansTF` and :class:`.TunnelKMeansTF`
+    Recommended usage of this class is via the derived classes :class:`.KMeansTF` and :class:`.TunnelKMeansTF`
+    To use :class:`.BaseKMeansTF` directly, set the parameter ``tunnel`` to False (k-means/k-means++) or True (tunnel k-means).
 
 Args:
     n_clusters (int): The number of clusters to form as well as the number of centroids to generate.
@@ -57,10 +71,6 @@ Args:
     tol (float): Relative tolerance with regards to inertia to declare convergence.
     verbose (int):    Verbosity mode.
     random_state (int): None, or integer to seed the random number generators of python, numpy and tensorflow
-    algorithm (str): "full", no other values implemented, added for compatibility with sklearn. Attention: sklearn.KMeans has
-            'elkan' as default which as of Dec 2019 interprets 'tol'-Parameter differently than 'full', see
-            https://github.com/scikit-learn/scikit-learn/issues/15831
-    max_mem (int):    max memory for GPU data (default value fits for GTX 1060)
     tunnel (boolean): perform tunnel k-means?
     max_tunnel_iter (int): how many tunnel iterations to perform maximally
     max_tunnel_moves_per_iter (int): how many centroids to move maximally in one tunnel iteration
@@ -73,10 +83,10 @@ Attributes:
         converging (see tol and max_iter), these will not be consistent with labels\\_.
     labels_ (array, shape(n_samples)): Labels of each point, i.e. index of closest centroid
     inertia_ (float): Sum of squared distances of samples to their closest cluster center.
-    n_iter (int): Number of iterations run.
+    n_iter_ (int): Number of iterations run.
 
 
-    .. autosummary::
+.. autosummary::
 
     """
     _num_type = np.float32
@@ -113,15 +123,15 @@ Attributes:
                  # from here
                  verbose=0,
                  random_state=None,
-
-                 max_mem=1800000000,
                  tunnel=False,
-                 max_tunnel_iter=100,
-                 max_tunnel_moves_per_iter=10,
+                 max_tunnel_iter=300,
+                 max_tunnel_moves_per_iter=100,
                  criterion=1.0,
                  local_trials=1,
                  collect_history=False):
-        # from scikit learn
+        self._system_status = KMeansTF.get_system_status()
+        self._good_max_mem = self._get_good_max_mem()
+                # from scikit learn
         self.n_clusters = n_clusters
         # convert numpy codebook to tf
         if isinstance(init,str):
@@ -164,14 +174,18 @@ Attributes:
         # and printed until the computation is successfull.
         # This makes it possible to find the best value for the GPU in use
         # successfully used value for colab GPU: 4000000000
-        self.max_mem = max_mem
+        #self.max_mem = max_mem
         # must work with tensorflow 1.4 and tensorflow 2.0b
         # in some places different code is needed
 
         # noinspection PyUnresolvedReferences
         # pylint: disable=maybe-no-member
-        self.TF2 = tf.__version__[0] == "2"
+        # self.TF2 = tf.__version__[0] == "2"
 
+
+        #print(f"good maxmem: {self._good_max_mem:,d}")
+
+        self.max_mem = self._good_max_mem + 0
         # result variable
         self.inertia_ = None
         #
@@ -197,7 +211,7 @@ Attributes:
             'n_init': n_init,
             'max_iter': max_iter,
             'tol': tol,
-            'max_mem': max_mem,
+            'max_mem': self.max_mem,
             'tunnel': tunnel,
             'max_tunnel_iter': max_tunnel_iter,
             'max_tunnel_moves_per_iter': max_tunnel_moves_per_iter,
@@ -289,6 +303,19 @@ Attributes:
         Returns:
             history (dict)"""
         return self._history
+
+    def _uses_gpu(self):
+        return self._system_status["tf_logi_gpus"] != 0
+    
+    def _get_good_max_mem(self):
+        if self._uses_gpu():
+            tot_mem = self._system_status["gpu_mem_total"]
+            gtxmm = 2147483648 # gtx 1080 max_mem, 2GB
+            gtxtm = 6365118464 # gtx 1080 total mem
+            max_mem = max(int(tot_mem/(gtxtm/gtxmm)),tot_mem - (gtxtm-gtxmm))
+        else:
+            max_mem = 1_000_000_000_000 # infinity ...
+        return max_mem
 
     def _perform_tunnel_phase(self, X):  # NOSONAR
         """tunnel phase: 
@@ -418,7 +445,7 @@ Attributes:
                         print()
         else:
             if self.verbose >= 1:
-                print("max no of tunnel iters reached: ", i)
+                print("max no of tunnel iters reached: ", i+1)
         self._log["tunnel_lloyd_iter"] = tunnel_lloyd_iter
         self._history["tunnel_history"] = self.tunnel_history
         self._history["criterion_history"] = self.criterion_history
@@ -427,12 +454,12 @@ Attributes:
         self.crit_ = crit
 
     def _tolerance_skl(self, X, tol):
-        """Return a tolerance which is independent of the dataset"""
+        """Return a tolerance which is independent of the data set"""
         variances = np.var(X.numpy(), axis=0)
         return np.mean(variances) * tol
 
     def _tolerance(self, X, tol):
-        """Return a tolerance which is independent of the DataSet"""
+        """Return a tolerance which is independent of the data set"""
         _, variances = tf.nn.moments(X, axes=[0])
         return tf.math.reduce_mean(variances) * tol
 
@@ -452,7 +479,7 @@ Attributes:
             # create tf.Tensor from to ndarray
             X = tf.constant(X.astype(self._get_num_type()))
         else:
-            raise Exception(
+            raise TensorError(
                 "Type for parameter X must be ndarray or tf.Tensor but is "+str(type(X)))
         return X
        
@@ -491,9 +518,9 @@ Attributes:
         # perform tunnel k-means (optional)
         #
         if self.tunnel_:
-            self.tunnel_ = False  # only tunnel at the first run
+            #self.tunnel_ = False  # only tunnel at the first run
             t_start_tunnel = time()
-            # calls fit() again to do k-means only
+            # calls _k_means() again to do k-means on given codebook
             self._perform_tunnel_phase(X)
             self._log["tunnel_inertia"] = self.inertia_
             self._log["tunnel_duration"] = time()-t_start_tunnel
@@ -604,7 +631,7 @@ Attributes:
                 current_centroids = self.init
                 #self._assert_not_nan(current_centroids, "init cb")
             else:
-                raise _MyProblem("invalid type for init:"+str(type(self.init)))
+                raise InvalidInitTypeError("invalid type for init:"+str(type(self.init)))
             init_duration += time()-start  # duration of random or k-means++ init or assignment
             if direct_call_from_fit and self.collect_history:
                 # remember codebook (overwritten if several runs, i.e. n_init>1)
@@ -656,11 +683,7 @@ Attributes:
                     # stop if center shift is below tolerance
                     center_shift_total = tf.cast(self._squared_norm(
                         centroids_old - current_centroids),self._get_num_type_tf())
-                    # if math.isnan(center_shift_total):
-                    #     print("NAN")
-                    #     print(centroids_old)
-                    #     print(current_centroids)
-                    #     raise Exception("nan")
+
                     if center_shift_total < tol:
                         if self.verbose > 0:
                             print(
@@ -795,7 +818,8 @@ Attributes:
                     #
                     distances = tf.reduce_sum(tf.square(
                         tf.subtract(expanded_vectors, expanded_centroids)), 2)  # [k,n]
-
+                    # no SSE computation here ....
+                    # no nearest centrid computation here
                     expanded_vectors = None  # free
                     expanded_centroids = None  # free
                     ready = True
@@ -805,18 +829,25 @@ Attributes:
                     #
                     expanded_vectors = None  # free
                     expanded_centroids = None  # free
+
+                    # sys.exc_info(): the values returned are (type, value, traceback)
                     exc_type, _, exc_tb = sys.exc_info()  # (type, value, traceback)
-                    fname = os.path.split(
-                        exc_tb.tb_frame.f_code.co_filename)[1]
-                    print("Exception during distance computation:",
-                          exc_type, fname, exc_tb.tb_lineno)
-                    # allocation of matrix_size bytes failed
-                    print("plan_moves(): matrix 0 too large: bytes {:,d}".format(
-                        matrix_size), e)
-                    self.max_mem = matrix_size-1  # sufficient to achieve a quite smaller size next time
+                    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
                     if self.verbose >= 1:
-                        print("max_mem is now:", self.max_mem,
-                              " (use the largest working value for the KMeansTF constructor)")
+                        print("Exception during distance computation:", exc_type, fname, exc_tb.tb_lineno)
+                    # allocation of matrix_size bytes failed
+                    print(f"plan_moves(): matrix too large for GPU: bytes {matrix_size:,d}, k={k} n={n:,} d={d} numsize={self._numsize()}, max_mem={self.max_mem:,}")
+                    print("automated slicing started")
+                    if self.verbose < 1:
+                        print("set 'verbose' to 1 to see more details")
+                    if self.verbose >= 1:
+                        print(e)                    
+                    # print("plan_moves(): matrix 0 too large: bytes {:,d}".format(
+                    #     matrix_size), e)
+                    # self.max_mem = matrix_size-1  # sufficient to achieve a quite smaller size next time
+                    # if self.verbose >= 1:
+                    #     print("max_mem is now:", self.max_mem,
+                    #           " (use the largest working value for the KMeansTF constructor)")
                     continue  # with new self.max_mem value
 
                 # assertion: distances matrix was successfully computed
@@ -832,8 +863,9 @@ Attributes:
                               distances.shape)
                         print("ERROR:", e)
                     self.max_mem = matrix_size-1  # sufficient to achieve a quite smaller size next time
-                    print("plan_moves(): max_mem is now:", self.max_mem,
-                          " (use the largest working value for the KMeansTF constructor)")
+                    if self.verbose >= 1:
+                        print("plan_moves(): max_mem is now:", self.max_mem,
+                            " (use the largest working value for the KMeansTF constructor)")
                     distances = None  # free
                     continue  # with new self.max_mem value
 
@@ -1163,18 +1195,22 @@ Attributes:
                     #
                     # matrix too large to fit into memory
                     #
+                    # sys.exc_info(): the values returned are (type, value, traceback)
                     exc_type, _, exc_tb = sys.exc_info()
-                    fname = os.path.split(
-                        exc_tb.tb_frame.f_code.co_filename)[1]
-                    print("Exception ...:", exc_type, fname, exc_tb.tb_lineno)
+                    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                    if self.verbose >= 1:
+                        print("Exception ...:", exc_type, fname, exc_tb.tb_lineno)
                     # allocation of matrix_size bytes failed
-                    print("matrix too large: bytes {:,d}".format(
-                        matrix_size), e)
+                    print(f"matrix too large for GPU: bytes {matrix_size:,d}, k={k} n={n:,} d={d} numsize={self._numsize()}, max_mem={self.max_mem:,}")
+                    print("automated slicing started")
+                    if self.verbose < 1:
+                        print("set 'verbose' to 1 to see more details")
                     if self.verbose >= 1:
                         print(e)
                     self.max_mem = matrix_size-1
-                    print("max_mem is now: {:,d}".format(self.max_mem),
-                          " (use the largest working value for the KMeansTF constructor)")
+                    if self.verbose >= 1:
+                        print("max_mem is now: {:,d}".format(self.max_mem),
+                        " (use the largest working value for the KMeansTF constructor)")
                     continue  # with new self.max_mem value
             else:
                 #
@@ -1216,13 +1252,12 @@ Attributes:
                             tf.subtract(expanded_vectors, expanded_centroids)), 2)  # [k,n//n_frac]
                     except Exception as e:
                         # allocation of frac_size bytes failed
-                        print(
-                            "matrix is too large: bytes: {:,}".format(frac_size))
+                        print(f"fraction matrix too large for GPU: bytes {frac_size:,d}, k={k} n={b2-b1:,} d={d} numsize={self._numsize()}, max_mem={self.max_mem:,}")
+                        self.max_mem = int(frac_size*0.9)
                         if self.verbose >= 1:
                             print(e)
-                        self.max_mem = int(frac_size*0.9)
-                        print("max_mem is now: {:,d}".format(
-                            self.max_mem), " (use the largest working value for the KMeansTF constructor)")
+                            print("max_mem is now: {:,d}".format(
+                                self.max_mem), " (use the largest working value for the KMeansTF constructor)")
                         break
                     # compute partial SSE
                     sse_f = tf.reduce_sum(
@@ -1287,6 +1322,19 @@ Attributes:
         np.random.seed(seed)
 
     @staticmethod
+    def _assert_gpu_memory():
+        s= KMeansTF.get_system_status()
+        limit_perc = 15
+        limit_bytes = 800_000_000
+        if (s["gpu_is_used"]==True) \
+            and (s["gpu_mem_free_perc"] < limit_perc) \
+            and (s["gpu_mem_free_perc"] < limit_bytes):
+            raise InsufficientGpuMemoryError(f"not enough free GPU memory: {s['gpu_mem_free_perc']}% ({s['gpu_mem_free']:,} bytes).\n"
+        f"required: {limit_perc}% and {limit_bytes:,} bytes.\n"
+        "Either free sufficient GPU memory and restart or run kmeanstf without GPU by setting\n"
+        '     os.environ["CUDA_VISIBLE_DEVICES"]=""') 
+
+    @staticmethod
     def get_system_status(do_print=False):
         """
         print tensorflow version and availability of GPUs. 
@@ -1304,11 +1352,31 @@ Attributes:
 
             dict with tensorflow version, no of physical GPUs, number of logical GPUs
         """
+        #tf_version
+        #tf_logi_cpus
+        #tf_phys_cpus
+        #gpu_mem_total
+        #gpu_mem_free
+        #gpu_mem_used
+        #nvidia_gpu
+        #gpu_is_used
+        #
+        #
         # pylint: disable=maybe-no-member
         if do_print:
             print("TENSORFLOW:", tf.__version__)
-        ret = {}
-        ret["tensorflow"]=tf.__version__
+        ret = {
+            "tf_version":None,
+            "tf_logi_gpus":None,
+            "tf_phys_gpus":None,
+            "gpu_mem_total":None,
+            "gpu_mem_free":None,
+            "gpu_mem_used":None,
+            "gpu_mem_free_perc":None,
+            "nvidia_gpu":None,
+            "gpu_is_used":None,
+        }
+        ret["tf_version"]=tf.__version__
         gpus = tf.config.experimental.list_physical_devices('GPU')
         if gpus:
             try:
@@ -1317,29 +1385,29 @@ Attributes:
                 #    tf.config.experimental.set_memory_growth(gpu, True)
                 logical_gpus = tf.config.experimental.list_logical_devices(
                     'GPU')
+                ret["tf_phys_gpus"] = len(gpus)
+                ret["tf_logi_gpus"] = len(logical_gpus)
                 if do_print:
-                    print("Physical GPUs:", len(gpus),
-                        "  Logical GPUs:", len(logical_gpus))
-                ret["Physical GPUs"] = len(gpus)
-                ret["Logical GPUs"] = len(logical_gpus)
+                    print("Physical GPUs:", ret["tf_phys_gpus"],
+                        "  Logical GPUs:", ret["tf_logi_gpus"])
             except RuntimeError as e:
                 # Memory growth must be set before GPUs have been initialized
                 print(e)
         else:
             if do_print:
                 print("no Tensorflow-visible GPUs available")
-            ret["Physical GPUs"] = 0
-            ret["Logical GPUs"] = 0
+            ret["tf_phys_gpus"] = 0
+            ret["tf_logi_gpus"] = 0
 
         try:
             nvidia_smi.nvmlInit()
         except:
-            ret["NVidia GPU"] = False
-            ret["Total GPU Memory"] = 0
-            ret["Free GPU Memory"] = 0
-            ret["Used GPU Memory"] = 0
+            ret["nvidia_gpu"] = False
+            ret["gpu_mem_total"] = 0
+            ret["gpu_mem_free"] = 0
+            ret["gpu_mem_used"] = 0
         else:
-            ret["NVidia GPU"] = True
+            ret["nvidia_gpu"] = True
 
             handle = nvidia_smi.nvmlDeviceGetHandleByIndex(0)
             # card id 0 hardcoded here, there is also a call to get all available card ids, so we could iterate
@@ -1350,11 +1418,13 @@ Attributes:
                 print(f"Total GPU Memory: {info.total:,d}")
                 print(f"Free GPU Memory: {info.free:,d}")
                 print(f"Used GPU Memory: {info.used:,d}")
-            ret["Total GPU Memory"] = info.total
-            ret["Free GPU Memory"] = info.free
-            ret["Used GPU Memory"] = info.used
+            ret["gpu_mem_total"] = info.total
+            ret["gpu_mem_free"] = info.free
+            ret["gpu_mem_used"] = info.used
+            ret["gpu_mem_free_perc"] = round(ret["gpu_mem_free"]/ret["gpu_mem_total"]*100,2)
 
-            nvidia_smi.nvmlShutdown()        
+            nvidia_smi.nvmlShutdown()   
+        ret["gpu_is_used"] = ret["tf_logi_gpus"]!=0     
         return ret
     
     @staticmethod
@@ -1370,21 +1440,22 @@ Attributes:
             return t.shape.as_list()
 
     @staticmethod
-    def _ugauss(n, d, sig):
-        """generate (n,d)-tensor of N(0,sig)-distributed values"""
+    def _ugauss(n, d, sigma):
+        """generate (n,d)-tensor of N(0,sigma)-distributed values"""
         return tf.random.normal(
             (n, d),
             mean=0.0,
-            stddev=sig,
+            stddev=sigma,
             dtype=TunnelKMeansTF._get_num_type()
         )
 
     @staticmethod
-    def _gauss_mix(n=1000, d=2, g=50, sig=0.0005):
-        """generate (n.d)-Tensor from mixture of g Gaussians
-        if n is no multiple of g, the last Gaussian generates fewer samples, so that exactly n samples are returned"""
+    def get_gaussian_mixture(n=1000, d=2, g=50, sigma=0.0005):
+        """generate test data from Gaussian mixture distribution
+        
+        Returns (n,d)-Tensor from mixture of g Gaussians with standard deviation *sigma*."""
         centers = tf.random.uniform((g, d),dtype=TunnelKMeansTF._get_num_type())
-        return tf.concat([KMeansTF._ugauss(int(np.ceil(n/g)), d, sig)+centers[i] for i in range(g)], axis=0)[0:n]
+        return tf.concat([KMeansTF._ugauss(int(np.ceil(n/g)), d, sigma)+centers[i] for i in range(g)], axis=0)[0:n]
 
     # general plotting function for one kmeansX result    
     @staticmethod
@@ -1402,7 +1473,7 @@ Attributes:
 
         """
         plots:
-        * DataSet
+        * data set
         * caption
         * centers (rims around centers with a suitable color)
         * possibly select 2 of d dimensions
@@ -1445,28 +1516,18 @@ Attributes:
     def _plot(ax,X,C=None,cap=None, over=None, voro=1):
             KMeansTF._km_plot(ax,X,C=C,cap=cap,voro=voro)
             #return
-            if 0:
-                ax.scatter(X[:,0],X[:,1],s=1)
-                if not C is None:
-                    ax.scatter(C[:,0],C[:,1],s=4,c="r")
             ax.set_aspect(1)
             ax.set_xlim((-0.1,1.1))
             ax.set_ylim((-0.1,1.1))
-            if 0:
-                ax.tick_params(length=0)
-                ax.axes.xaxis.set_ticklabels([])
-                ax.axes.yaxis.set_ticklabels([])
             if not over is None:
                 ax.text(0.5, 0.98, over, horizontalalignment='center', verticalalignment='top', 
                 transform=ax.transAxes, fontsize=25, fontweight="bold", alpha=0.4)
-            #if not cap is None:
-            #    ax.set_title(cap)
-            #ax.get_figure().tight_layout()
+
 
 
     @staticmethod
     def self_test(X=None,  n_clusters=100, n_init=10, n=10000, 
-    d=2, g=50, sig:float=None, verbose=0, stats_only=0, 
+    d=2, g=50, sigma:float=None, verbose=0, stats_only=0, 
     init="k-means++",plot=True, voro=True):
         """self-testing routine
         
@@ -1487,7 +1548,7 @@ Attributes:
         n (int): number of data points to generate
         d (int): number of features (dimensionality) of generated data points
         g (int): number of Gaussians
-        sig (float): standard deviation of Gaussians, if 'None' a value is chosen based on number of Gaussians
+        sigma (float): standard deviation of Gaussians, if 'None' a value is chosen based on number of Gaussians
         init ('k-means++' or 'random'): initialization method for *k*-means (tunnel *k*-means is initialized as random)
         plot (bool): plot the result?
         voro (bool): show Voronoi regions in plot?
@@ -1495,11 +1556,11 @@ Attributes:
         
         """
         print("self test ...")
-        if sig is None:
-            sig=1.0/(7+math.sqrt(g))/10
+        if sigma is None:
+            sigma=1.0/(7+math.sqrt(g))/10*2
         # create data set
         if X is None:
-            X = KMeansTF._gauss_mix(n=n, d=d,g=g, sig=sig)
+            X = KMeansTF.get_gaussian_mixture(n=n, d=d,g=g, sigma=sigma)
             if d == 1:
                 box="segment"
             if d == 2:
@@ -1508,7 +1569,7 @@ Attributes:
                 box="cube"
             if d > 3:
                 box=f"{d}D-hypercube"
-            print(f"Data is mixture of {g} Gaussians in unit {box} with sigma={sig:.5f}")
+            print(f"Data is mixture of {g} Gaussians in unit {box} with sigma={sigma:.5f}")
         else:
             print(f"Data is provided by caller. Statistial properties unknown")
         print(f"algorithm      | data.shape  |   k  | init      | n_init  |     SSE   | Runtime  | Improvement")
@@ -1517,6 +1578,11 @@ Attributes:
 
         kms = KMeans(n_clusters=n_clusters, n_init=n_init,
                       verbose=verbose, init=init, algorithm="full")
+        #
+        # sklearn.KMeans has ‘elkan’ as default which as of Jan 2020 interprets ‘tol’-Parameter differently 
+        # than ‘full’, see https://github.com/scikit-learn/scikit-learn/issues/15831
+        # which leads to different numbers of Lloyd iterations
+        # to make results comparable, we use "full" here
         start_kms = time()
         kms.fit(X)
         t_kms = time()-start_kms
@@ -1526,7 +1592,7 @@ Attributes:
         print(f"k-means++      | {str(X.shape):11s} | {n_clusters:4d} | {init:9s} | {n_init:7d} | {kms.inertia_:9.5f} | {t_kms:7.2f}s | {imp:.2%}")
         if 0:
             km = KMeansTF(n_clusters=n_clusters, n_init=n_init,
-                        verbose=verbose, init=init, algorithm="full")
+                        verbose=verbose, init=init)
             start_kmpp = time()
             km.fit(X)
             t_kmpp = time()-start_kmpp
@@ -1604,20 +1670,16 @@ Args:
     tol (float):        Relative tolerance with regards to inertia to declare convergence.
     verbose (int):    Verbosity mode.
     random_state (int): None, or integer to seed the random number generators of python, numpy and tensorflow
-    algorithm (str) : "full", no other values implemented, added for compatibility with sklearn. Attention: sklearn.KMeans has
-            'elkan' as default which as of Dec 2019 interprets 'tol'-Parameter differently than 'full', see
-            https://github.com/scikit-learn/scikit-learn/issues/15831
-    max_mem (int):    max memory for GPU data (value fits for GTX 1060)
 
 Attributes:
     cluster_centers_ (array, [n_clusters, n_features]): Coordinates of cluster centers. If the algorithm stops before fully 
         converging (see tol and max_iter), these will not be consistent with labels\\_.
     labels_ (array, shape(n_samples)): Labels of each point, i.e. index of closest centroid
     inertia_ (float): Sum of squared distances of samples to their closest cluster center.
-    n_iter (int): Number of iterations run.
+    n_iter_ (int): Number of iterations run.
     """
 
-    def __init__(self, n_clusters=8, init='k-means++', n_init:int=10, max_iter=300, tol=1e-4, verbose=0, random_state=None, algorithm=None, max_mem=1_800_000_000):
+    def __init__(self, n_clusters=8, init='k-means++', n_init:int=10, max_iter=300, tol=1e-4, verbose=0, random_state=None):
         super().__init__(
             n_clusters=n_clusters,
             init=init,
@@ -1625,8 +1687,7 @@ Attributes:
             max_iter=max_iter,
             tol=tol,
             verbose=verbose,
-            random_state=random_state,
-            max_mem=max_mem)
+            random_state=random_state)
 
 
 class TunnelKMeansTF(BaseKMeansTF):
@@ -1637,16 +1698,12 @@ For full desription of methods see base class :class:`BaseKMeansTF`
 Args:
     n_clusters (int): The number of clusters to form as well as the number of centroids to generate.
     init ('random', 'k-means++' or array): method of initialization
-    n_init (int): number of runs of the initial k-means phase with different initializations (default 1). 
-                    Only one tunnel phase is performed even if n_init is larger than 1.
+    n_init (int): number of runs of the *initial* k-means phase with different initializations (default 1). 
+                    Only **one** tunnel phase is performed even if n_init is larger than 1.
     max_iter (int):   Maximum number of Lloyd iterations for a single run of the k-means algorithm.
     tol (float): Relative tolerance with regards to inertia to declare convergence.
     verbose (int):    Verbosity mode.
     random_state (int): None, or integer to seed the random number generators of python, numpy and tensorflow
-    algorithm (str): "full", no other values implemented, added for compatibility with sklearn. Attention: sklearn.KMeans has
-            'elkan' as default which as of Dec 2019 interprets 'tol'-Parameter differently than 'full', see
-            https://github.com/scikit-learn/scikit-learn/issues/15831
-    max_mem (int):    max memory for GPU data (default value fits for GTX 1060)
     max_tunnel_iter (int): how many tunnel iterations to perform maximally
     max_tunnel_moves_per_iter (int): how many centroids to move maximally in one tunnel iteration
     criterion (float): inital required ratio error/utility (is increased adaptively)
@@ -1658,7 +1715,7 @@ Attributes:
         converging (see tol and max_iter), these will not be consistent with labels\\_.
     labels_ (array, shape(n_samples)): Labels of each point, i.e. index of closest centroid
     inertia_ (float): Sum of squared distances of samples to their closest cluster center.
-    n_iter (int): Number of iterations run.
+    n_iter_ (int): Number of iterations run.
 
     """
 
@@ -1670,8 +1727,6 @@ Attributes:
                  tol=1e-4,
                  verbose=0,
                  random_state=None,
-                 algorithm=None,
-                 max_mem=1_800_000_000,
                  max_tunnel_iter=300,
                  max_tunnel_moves_per_iter=100,
                  criterion=1.0,
@@ -1685,20 +1740,9 @@ Attributes:
             tol=tol,
             verbose=verbose,
             random_state=random_state,
-            max_mem=max_mem,
             tunnel=True,
             max_tunnel_iter=max_tunnel_iter,
             max_tunnel_moves_per_iter=max_tunnel_moves_per_iter,
             criterion=criterion,
             local_trials=local_trials,
             collect_history=collect_history)
-
-
-#class TKMeans(TunnelKMeansTF):
-#    def __init__(self, *args, **kwargs):
-#        super().__init__(*args, **kwargs)
-
-
-#class KMeans(KMeansTF):
-#    def __init__(self, *args, **kwargs):
-#        super().__init__(*args, **kwargs)
